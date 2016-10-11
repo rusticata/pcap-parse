@@ -1,3 +1,7 @@
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
 extern crate pcap;
 extern crate pnet;
 
@@ -47,16 +51,16 @@ fn handle_parsed_data(v:&Vec<TlsPlaintext>) {
 }
 
 fn callback(ds: usize, packet: pcap::Packet) {
-    println!("----------------------------------------");
-    println!("raw packet: {:?}", packet.data);
+    debug!("----------------------------------------");
+    debug!("raw packet: {:?}", packet.data);
 
     //let ref ether = EthernetPacket::new(packet.data).unwrap();
     let ref ipv4 = Ipv4Packet::new(&packet.data[ds..]).unwrap();
-    // println!("next level proto: {:?}", ipv4.get_next_level_protocol());
+    // debug!("next level proto: {:?}", ipv4.get_next_level_protocol());
     if ipv4.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
         match TcpPacket::new(ipv4.payload()) {
             Some(ref tcp) => {
-                //println!("tcp payload: {:?}", tcp.payload());
+                //debug!("tcp payload: {:?}", tcp.payload());
 
                 let d = tls_parser_many(tcp.payload());
                 match d {
@@ -75,6 +79,7 @@ fn callback(ds: usize, packet: pcap::Packet) {
 }
 
 fn main() {
+    let _ = env_logger::init().unwrap();
     let args: Vec<_> = env::args().collect();
     if args.len() > 1 {
         let mut cap = pcap::Capture::from_file(&args[1]).unwrap();
@@ -88,6 +93,6 @@ fn main() {
             callback(ds,packet);
         }
     } else {
-        println!("Usage: <prog> file.pcap");
+        warn!("Usage: <prog> file.pcap");
     }
 }
