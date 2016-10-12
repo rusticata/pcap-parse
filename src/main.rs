@@ -56,8 +56,14 @@ fn parse_data_as_tls(i: &[u8]) {
         debug!("raw: {:?}",res_raw);
         match res_raw {
             IResult::Done(rem, ref r) => {
-                let plaintext = parse_tls_raw_record_as_plaintext(r).unwrap();
-                handle_parsed_tls_record(&plaintext);
+                // XXX parse as plaintext only if ChangeCipherSpec not sent
+                match parse_tls_raw_record_as_plaintext(r) {
+                    Some(plaintext) => {
+                        // XXX update state
+                        handle_parsed_tls_record(&plaintext)
+                    }
+                    _ => warn!("parse_tls_raw_record_as_plaintext failed"),
+                };
                 cur_i = rem;
             },
             IResult::Incomplete(_) => warn!("Fragmentation required ? {:?}", res_raw),
