@@ -5,6 +5,11 @@ extern crate env_logger;
 extern crate pcap;
 extern crate pnet;
 
+#[macro_use]
+extern crate lazy_static;
+
+use std::sync::Mutex;
+
 use std::env;
 
 use pnet::packet::Packet;
@@ -15,59 +20,123 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 
 extern crate tls_parser;
-use tls_parser::tls::{TlsMessage,TlsPlaintext,TlsMessageHandshake,parse_tls_raw_record,parse_tls_raw_record_as_plaintext};
+use tls_parser::tls::{TlsMessage,TlsMessageHandshake,parse_tls_raw_record,parse_tls_record_with_type};
 use tls_parser::tls_ciphers::TlsCipherSuite;
 use tls_parser::tls_extensions::parse_tls_extensions;
+use tls_parser::tls_states::*;
 
 extern crate nom;
 use nom::IResult;
 
-fn handle_parsed_tls_record(record: &TlsPlaintext) {
-    debug!("plaintext: {:?}", record);
-    for msg in &record.msg {
-        match *msg {
-            TlsMessage::Handshake(ref m) => {
-                match *m {
-                    TlsMessageHandshake::ClientHello(ref content) => {
-                        let blah = parse_tls_extensions(content.ext.unwrap_or(b""));
-                        debug!("ext {:?}", blah);
-                    },
-                    TlsMessageHandshake::ServerHello(ref content) => {
-                        match TlsCipherSuite::from_id(content.cipher) {
-                            Some(c) => info!("Selected cipher: {:?}", c),
-                            _ => info!("Unknown cipher 0x{:x}", content.cipher),
-                        };
-                        let ext = parse_tls_extensions(content.ext.unwrap_or(b""));
-                        debug!("ext {:?}", ext);
-                    },
-                    _ => (),
-                }
-            },
-            _ => (),
+struct TlsParserState {
+    buffer: Vec<u8>,
+    tls_state: TlsState,
+}
+
+impl TlsParserState {
+    fn new() -> TlsParserState {
+        TlsParserState{
+            // capacity is the amount of space allocated, which means elements can be added
+            // without reallocating the vector
+            buffer: Vec::with_capacity(16384),
+            tls_state: TlsState::None,
         }
+    }
+
+    fn append_buffer<'b>(self: &mut TlsParserState, buf: &'b[u8]) {
+        self.buffer.extend_from_slice(&buf);
+    }
+}
+
+lazy_static! {
+    static ref TLS_STATE : Mutex<TlsParserState> = Mutex::new(TlsParserState::new());
+}
+
+fn handle_parsed_tls_msg(state: &mut TlsParserState, msg: &TlsMessage) {
+    debug!("msg: {:?}",*msg);
+    match tls_state_transition(state.tls_state, msg) {
+        Ok(s)  => state.tls_state = s,
+        Err(_) => {
+            state.tls_state = TlsState::Invalid;
+            warn!("Invalid state transition");
+        },
+    };
+    debug!("New TLS state: {:?}",state.tls_state);
+    match *msg {
+        TlsMessage::Handshake(ref m) => {
+            match *m {
+                TlsMessageHandshake::ClientHello(ref content) => {
+                    let blah = parse_tls_extensions(content.ext.unwrap_or(b""));
+                    debug!("ext {:?}", blah);
+                },
+                TlsMessageHandshake::ServerHello(ref content) => {
+                    match TlsCipherSuite::from_id(content.cipher) {
+                        Some(c) => info!("Selected cipher: {:?}", c),
+                        _ => info!("Unknown cipher 0x{:x}", content.cipher),
+                    };
+                    let ext = parse_tls_extensions(content.ext.unwrap_or(b""));
+                    debug!("ext {:?}", ext);
+                },
+                _ => (),
+            }
+        },
+        _ => (),
     }
 }
 
 fn parse_data_as_tls(i: &[u8]) {
+    // defragmentation buffer
+    let mut v : Vec<u8>;
     let mut cur_i = i;
 
+    if i.len() == 0 {
+        return;
+    }
+
+    let mut state = TLS_STATE.lock().unwrap();
+
     while cur_i.len() > 0 {
-        let res_raw = parse_tls_raw_record(cur_i);
-        debug!("raw: {:?}",res_raw);
-        match res_raw {
+        match parse_tls_raw_record(cur_i) {
             IResult::Done(rem, ref r) => {
-                // XXX parse as plaintext only if ChangeCipherSpec not sent
-                match parse_tls_raw_record_as_plaintext(r) {
-                    Some(plaintext) => {
-                        // XXX update state
-                        handle_parsed_tls_record(&plaintext)
-                    }
-                    _ => warn!("parse_tls_raw_record_as_plaintext failed"),
-                };
                 cur_i = rem;
+                // XXX r.hdr.len must not be greater than 2^14 ([RFC5246] section 6.2.1)
+                // XXX record may be compressed
+                let buffer = match state.buffer.len() {
+                    0 => r.data,
+                    _ => {
+                        v = state.buffer.split_off(0);
+                        // XXX sanity check vector length to avoid memory exhaustion ?
+                        // XXX maximum length may be 2^24 (handshake message)
+                        v.extend_from_slice(r.data);
+                        v.as_slice()
+                    },
+                };
+                // do not parse if session is encrypted
+                if state.tls_state == TlsState::ClientChangeCipherSpec {
+                    continue;
+                };
+                // XXX nope, we should parse one message at a time
+                match parse_tls_record_with_type(buffer,r.hdr.record_type) {
+                    IResult::Done(rem2,ref msg_list) => {
+                        for msg in msg_list {
+                            handle_parsed_tls_msg(&mut state, msg);
+                        };
+                        if rem2.len() > 0 {
+                            warn!("extra bytes in TLS record: {:?}",rem2);
+                        };
+                    }
+                    IResult::Incomplete(_) => {
+                        debug!("Fragmentation required (TLS record)");
+                        state.append_buffer(r.data);
+                    },
+                    IResult::Error(e) => { warn!("parse_tls_record_with_type failed: {:?}",e); break; },
+                };
             },
-            IResult::Incomplete(_) => warn!("Fragmentation required ? {:?}", res_raw),
-            IResult::Error(e) => warn!("Parsing failed: {:?}",e),
+            IResult::Incomplete(_) => {
+                warn!("Fragmentation required (TCP level ?) {:?}", cur_i);
+                break;
+            },
+            IResult::Error(e) => { warn!("Parsing failed: {:?}",e); break; },
         }
     }
 }
@@ -84,6 +153,7 @@ fn callback(ds: usize, packet: pcap::Packet) {
             Some(ref tcp) => {
                 //debug!("tcp payload: {:?}", tcp.payload());
 
+                // XXX check if data is indeed TLS
                 parse_data_as_tls(tcp.payload());
             },
             None => (), // not a TCP packet, ignore
