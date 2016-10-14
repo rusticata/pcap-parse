@@ -20,7 +20,7 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::ip::IpNextHeaderProtocols;
 
 extern crate tls_parser;
-use tls_parser::tls::{TlsMessage,TlsMessageHandshake,parse_tls_raw_record,parse_tls_record_with_type};
+use tls_parser::tls::{TlsMessage,TlsMessageHandshake,parse_tls_raw_record,parse_tls_record_with_header};
 use tls_parser::tls_ciphers::TlsCipherSuite;
 use tls_parser::tls_extensions::parse_tls_extensions;
 use tls_parser::tls_states::*;
@@ -116,7 +116,7 @@ fn parse_data_as_tls(i: &[u8]) {
                     continue;
                 };
                 // XXX nope, we should parse one message at a time
-                match parse_tls_record_with_type(buffer,r.hdr.record_type) {
+                match parse_tls_record_with_header(buffer,r.hdr.clone()) {
                     IResult::Done(rem2,ref msg_list) => {
                         for msg in msg_list {
                             handle_parsed_tls_msg(&mut state, msg);
@@ -129,7 +129,7 @@ fn parse_data_as_tls(i: &[u8]) {
                         debug!("Fragmentation required (TLS record)");
                         state.append_buffer(r.data);
                     },
-                    IResult::Error(e) => { warn!("parse_tls_record_with_type failed: {:?}",e); break; },
+                    IResult::Error(e) => { warn!("parse_tls_record_with_header failed: {:?}",e); break; },
                 };
             },
             IResult::Incomplete(_) => {
