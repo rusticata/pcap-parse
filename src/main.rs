@@ -12,6 +12,7 @@ use std::sync::Mutex;
 
 use std::env;
 
+use pnet::packet::PacketSize;
 use pnet::packet::Packet;
 //use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
@@ -152,9 +153,17 @@ fn callback(ds: usize, packet: pcap::Packet) {
         match TcpPacket::new(ipv4.payload()) {
             Some(ref tcp) => {
                 //debug!("tcp payload: {:?}", tcp.payload());
+                let mut payload = tcp.payload();
+                // heuristic to catch vss-monitoring extra bytes
+                if ipv4.packet_size() + tcp.packet().len() != (ipv4.get_total_length() as usize) {
+                    let extra = (ipv4.packet_size() + tcp.packet().len()) - (ipv4.get_total_length() as usize);
+                    info!("Removing {} extra bytes",extra);
+                    let new_len = payload.len() - extra;
+                    payload = &payload[0..new_len];
+                };
 
                 // XXX check if data is indeed TLS
-                parse_data_as_tls(tcp.payload());
+                parse_data_as_tls(payload);
             },
             None => (), // not a TCP packet, ignore
         }
