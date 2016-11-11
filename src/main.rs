@@ -20,23 +20,26 @@ use pnet::packet::tcp::TcpPacket;
 
 use pnet::packet::ip::IpNextHeaderProtocols;
 
+extern crate nom;
+use nom::IResult;
+
 extern crate tls_parser;
 use tls_parser::tls::{TlsMessage,TlsMessageHandshake,parse_tls_raw_record,parse_tls_record_with_header};
 use tls_parser::tls_ciphers::TlsCipherSuite;
 use tls_parser::tls_extensions::parse_tls_extensions;
 use tls_parser::tls_states::*;
 
-extern crate nom;
-use nom::IResult;
+extern crate rusticata;
+use rusticata::TlsParserState;
 
-struct TlsParserState {
+struct PcapTlsParserState {
     buffer: Vec<u8>,
     tls_state: TlsState,
 }
 
-impl TlsParserState {
-    fn new() -> TlsParserState {
-        TlsParserState{
+impl PcapTlsParserState {
+    fn new() -> PcapTlsParserState {
+        PcapTlsParserState{
             // capacity is the amount of space allocated, which means elements can be added
             // without reallocating the vector
             buffer: Vec::with_capacity(16384),
@@ -44,16 +47,16 @@ impl TlsParserState {
         }
     }
 
-    fn append_buffer<'b>(self: &mut TlsParserState, buf: &'b[u8]) {
+    fn append_buffer<'b>(self: &mut PcapTlsParserState, buf: &'b[u8]) {
         self.buffer.extend_from_slice(&buf);
     }
 }
 
 lazy_static! {
-    static ref TLS_STATE : Mutex<TlsParserState> = Mutex::new(TlsParserState::new());
+    static ref TLS_STATE : Mutex<TlsParserState<'static>> = Mutex::new(TlsParserState::new(b"boo"));
 }
 
-fn handle_parsed_tls_msg(state: &mut TlsParserState, msg: &TlsMessage) {
+fn handle_parsed_tls_msg(state: &mut PcapTlsParserState, msg: &TlsMessage) {
     debug!("msg: {:?}",*msg);
     match tls_state_transition(state.tls_state, msg) {
         Ok(s)  => state.tls_state = s,
@@ -86,60 +89,13 @@ fn handle_parsed_tls_msg(state: &mut TlsParserState, msg: &TlsMessage) {
 }
 
 fn parse_data_as_tls(i: &[u8]) {
-    // defragmentation buffer
-    let mut v : Vec<u8>;
-    let mut cur_i = i;
-
     if i.len() == 0 {
         return;
     }
 
     let mut state = TLS_STATE.lock().unwrap();
 
-    while cur_i.len() > 0 {
-        match parse_tls_raw_record(cur_i) {
-            IResult::Done(rem, ref r) => {
-                cur_i = rem;
-                // XXX r.hdr.len must not be greater than 2^14 ([RFC5246] section 6.2.1)
-                // XXX record may be compressed
-                let buffer = match state.buffer.len() {
-                    0 => r.data,
-                    _ => {
-                        v = state.buffer.split_off(0);
-                        // XXX sanity check vector length to avoid memory exhaustion ?
-                        // XXX maximum length may be 2^24 (handshake message)
-                        v.extend_from_slice(r.data);
-                        v.as_slice()
-                    },
-                };
-                // do not parse if session is encrypted
-                if state.tls_state == TlsState::ClientChangeCipherSpec {
-                    continue;
-                };
-                // XXX nope, we should parse one message at a time
-                match parse_tls_record_with_header(buffer,r.hdr.clone()) {
-                    IResult::Done(rem2,ref msg_list) => {
-                        for msg in msg_list {
-                            handle_parsed_tls_msg(&mut state, msg);
-                        };
-                        if rem2.len() > 0 {
-                            warn!("extra bytes in TLS record: {:?}",rem2);
-                        };
-                    }
-                    IResult::Incomplete(_) => {
-                        debug!("Fragmentation required (TLS record)");
-                        state.append_buffer(r.data);
-                    },
-                    IResult::Error(e) => { warn!("parse_tls_record_with_header failed: {:?}",e); break; },
-                };
-            },
-            IResult::Incomplete(_) => {
-                warn!("Fragmentation required (TCP level ?) {:?}", cur_i);
-                break;
-            },
-            IResult::Error(e) => { warn!("Parsing failed: {:?}",e); break; },
-        }
-    }
+    state.parse_tcp_level(i);
 }
 
 fn callback(ds: usize, packet: pcap::Packet) {

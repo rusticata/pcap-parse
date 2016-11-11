@@ -11,4 +11,4 @@ log = "*"
 env_logger = "*"
 lazy_static = "0.1.*"
 tls-parser = { git = "https://github.com/rusticata/tls-parser.git" }
-
+rusticata = { git = "https://github.com/rusticata/rusticata.git" }
