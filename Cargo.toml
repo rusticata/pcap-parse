@@ -1,6 +1,11 @@
 [package]
 name = "pcap-parse"
 version = "0.1.0"
+description = "PCAP test tool for rusticata parsers"
+license = "LGPL-2.1+"
+keywords = ["Rusticata","pcap","protocol","parser","nom"]
+homepage = "https://github.com/rusticata/pcap-parse"
+repository = "https://github.com/rusticata/pcap-parse.git"
 authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 
 [dependencies]
