@@ -12,7 +12,7 @@ authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 argparse = "*"
 pcap = "0.5.7"
 pnet = "0.13.0"
-nom = "1.2.4"
+nom = {version = "^2.0", features=["verbose-errors"] }
 log = "*"
 env_logger = "*"
 lazy_static = "0.1.*"
