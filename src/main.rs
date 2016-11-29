@@ -103,12 +103,12 @@ struct NflogTlv<'a> {
 }
 
 named!(parse_nflog_tlv<NflogTlv>,
-    chain!(
-        l: le_u16 ~
-        t: le_u16 ~
-        v: take!(l-4) ~
-        _padding: cond!(l % 4 != 0,take!(4-(l%4))),
-        ||{ NflogTlv{l:l,t:t,v:v} }
+    do_parse!(
+        l: le_u16 >>
+        t: le_u16 >>
+        v: take!(l-4) >>
+        _padding: cond!(l % 4 != 0,take!(4-(l%4))) >>
+        ( NflogTlv{l:l,t:t,v:v} )
     )
 );
 
@@ -122,19 +122,19 @@ struct NflogHdr<'a> {
 
 named!(parse_nflog_header<NflogHdr>,
     dbg_dmp!(
-    chain!(
-        af: le_u8 ~
-        v:  le_u8 ~
-        id: le_u16 ~
-        d:  many0!(parse_nflog_tlv),
-        ||{
+    do_parse!(
+        af: le_u8 >>
+        v:  le_u8 >>
+        id: le_u16 >>
+        d:  many0!(parse_nflog_tlv) >>
+        (
             NflogHdr{
                 af: af,
                 vers: v,
                 res_id: id,
                 data: d,
             }
-        }
+        )
     )
     )
 );
