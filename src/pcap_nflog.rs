@@ -1,3 +1,5 @@
+//! See http://www.tcpdump.org/linktypes/LINKTYPE_NFLOG.html
+
 use nom::{le_u8,le_u16,IResult};
 use pcap::Packet;
 

@@ -53,6 +53,9 @@ fn callback(data:&[u8], p: &mut RParser)
     if ipv4.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
         match TcpPacket::new(ipv4.payload()) {
             Some(ref tcp) => {
+                debug!("    TCP {:?}:{} -> {:?}:{}",
+                       ipv4.get_source(), tcp.get_source(),
+                       ipv4.get_destination(), tcp.get_destination());
                 //debug!("tcp payload: {:?}", tcp.payload());
                 let mut payload = tcp.payload();
                 // heuristic to catch vss-monitoring extra bytes
@@ -72,6 +75,9 @@ fn callback(data:&[u8], p: &mut RParser)
     if ipv4.get_next_level_protocol() == IpNextHeaderProtocols::Udp {
         match UdpPacket::new(ipv4.payload()) {
             Some(ref udp) => {
+                debug!("    UDP {:?}:{} -> {:?}:{}",
+                       ipv4.get_source(), udp.get_source(),
+                       ipv4.get_destination(), udp.get_destination());
                 let mut payload = udp.payload();
                 // heuristic to catch vss-monitoring extra bytes
                 if ipv4.packet_size() + udp.packet().len() != (ipv4.get_total_length() as usize) {
