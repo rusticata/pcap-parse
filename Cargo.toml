@@ -11,9 +11,12 @@ authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 [dependencies]
 argparse = "*"
 pcap = "0.5.7"
-pnet = "0.13.0"
-nom = "^2.0"
+pnet = "0.15.0"
+nom = "^3.0"
 log = "*"
 env_logger = "*"
 lazy_static = "0.1.*"
-rusticata = { git = "https://github.com/rusticata/rusticata.git" }
+
+[dependencies.rusticata]
+# path = "../rusticata"
+git = "https://github.com/rusticata/rusticata.git"
