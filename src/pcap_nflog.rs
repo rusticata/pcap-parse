@@ -1,6 +1,9 @@
 use nom::{le_u8,le_u16,IResult};
 use pcap::Packet;
 
+// Defined in linux/netfilter/nfnetlink_log.h
+const NFULA_PAYLOAD : u16 = 9;
+
 #[derive(Debug)]
 struct NflogTlv<'a> {
     pub l: u16,
@@ -49,10 +52,10 @@ named!(parse_nflog_header<NflogHdr>,
 pub fn get_data_nflog<'a>(packet: &'a Packet) -> &'a[u8] {
     match parse_nflog_header(packet.data) {
         IResult::Done(_,res) => {
-            for v in res.data {
-                if v.t == 9 { return v.v; }; // 9: packet payload
-            };
-            panic!("packet with no payload data");
+            match res.data.into_iter().find(|v| v.t == NFULA_PAYLOAD) {
+                Some(v) => v.v,
+                None    => panic!("packet with no payload data"),
+            }
         },
         e @ _ => panic!("parsing nflog packet header failed: {:?}",e),
     }
