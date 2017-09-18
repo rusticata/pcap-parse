@@ -133,6 +133,18 @@ fn callback(data:&[u8], ptype: &String, globalstate: &mut GlobalState)
     }
 }
 
+// BSD loopback encapsulation; the link layer header is a 4-byte field, in host byte order,
+// containing a value of 2 for IPv4 packets, a value of either 24, 28, or 30 for IPv6 packets, a
+// value of 7 for OSI packets, or a value of 23 for IPX packets. All of the IPv6 values correspond
+// to IPv6 packets; code reading files should check for all of them.
+// Note that ``host byte order'' is the byte order of the machine on which the packets are
+// captured; if a live capture is being done, ``host byte order'' is the byte order of the machine
+// capturing the packets, but if a ``savefile'' is being read, the byte order is not necessarily
+// that of the machine reading the capture file.
+fn get_data_null<'a>(packet: &'a pcap::Packet) -> &'a[u8] {
+    &packet.data[4..]
+}
+
 fn get_data_ethernet<'a>(packet: &'a pcap::Packet) -> &'a[u8] {
     &packet.data[14..]
 }
@@ -171,10 +183,11 @@ fn main() {
 
     // See http://www.tcpdump.org/linktypes.html
     let get_data = match cap.get_datalink() {
+        pcap::Linktype(0) => get_data_null,
         pcap::Linktype(1) => get_data_ethernet,
         pcap::Linktype(113) => get_data_linux_cooked,
         pcap::Linktype(239) => get_data_nflog,
-        _ => panic!("unsupported data link type"),
+        e @ _ => panic!("unsupported data link type {:?}", e),
     };
 
     while let Ok(packet) = cap.next() {
