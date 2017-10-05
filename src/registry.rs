@@ -17,6 +17,7 @@ impl ParserRegistry {
             "ipsec"  => Ok(Box::new(Self::create_ikev2())),
             "ntp"    => Ok(Box::new(Self::create_ntp())),
             "radius" => Ok(Box::new(Self::create_radius())),
+            "snmp"   => Ok(Box::new(Self::create_snmpv1())),
             "snmpv1" => Ok(Box::new(Self::create_snmpv1())),
             "snmpv3" => Ok(Box::new(Self::create_snmpv3())),
             "ssh"    => Ok(Box::new(Self::create_ssh())),
