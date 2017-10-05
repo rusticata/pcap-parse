@@ -15,7 +15,6 @@ pnet = "0.15.0"
 nom = "^3.0"
 log = "*"
 env_logger = "*"
-lazy_static = "0.1.*"
 
 [dependencies.rusticata]
 # path = "../rusticata"
