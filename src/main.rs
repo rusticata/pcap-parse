@@ -10,6 +10,8 @@ use std::collections::HashMap;
 extern crate argparse;
 use argparse::{ArgumentParser, StoreTrue, Store};
 
+use std::net::IpAddr;
+
 use pnet::packet::PacketSize;
 use pnet::packet::Packet;
 //use pnet::packet::ethernet::EthernetPacket;
@@ -58,6 +60,158 @@ fn parse_data_as(parser: &mut RParser, i: &[u8], direction: u8)
     // let mut state = TLS_STATE.lock().unwrap();
     // state.parse_tcp_level(i);
     parser.parse(i, direction);
+}
+
+fn parse_tcp(ipv4: &Ipv4Packet, tcp: &TcpPacket, ptype: &mut String, globalstate: &mut GlobalState) {
+    debug!("    TCP {:?}:{} -> {:?}:{}",
+           ipv4.get_source(), tcp.get_source(),
+           ipv4.get_destination(), tcp.get_destination());
+    //debug!("tcp payload: {:?}", tcp.payload());
+    let mut payload = tcp.payload();
+    // heuristic to catch vss-monitoring extra bytes
+    if ipv4.packet_size() + tcp.packet().len() != (ipv4.get_total_length() as usize) {
+        let extra = (ipv4.packet_size() + tcp.packet().len()) - (ipv4.get_total_length() as usize);
+        info!("Removing {} extra bytes",extra);
+        let new_len = payload.len() - extra;
+        payload = &payload[0..new_len];
+    };
+    // empty payload (e.g. SYN)
+    if payload.len() == 0 { return; }
+
+    // get 5-tuple
+    let src = ipv4.get_source();
+    let dst = ipv4.get_destination();
+    let (proto,sport,dport) = (6,tcp.get_source(),tcp.get_destination());
+    let mut five_t = FiveTuple{
+        proto: proto,
+        src: IpAddr::V4(src),
+        dst: IpAddr::V4(dst),
+        src_port: sport,
+        dst_port: dport,
+    };
+    let mut direction : u8 = TO_SERVER;
+    debug!("5T: {:?}", five_t);
+
+    if !globalstate.sessions.contains_key(&five_t) {
+        // not found, lookup reverse hash
+        let rev_five_t = five_t.get_reverse();
+        debug!("rev 5T: {:?}", rev_five_t);
+        if globalstate.sessions.contains_key(&rev_five_t) {
+            debug!("found reverse hash");
+            five_t = rev_five_t;
+            direction = TO_CLIENT;
+        } else {
+            debug!("Creating new session");
+            // probe TCP data
+            match ParserRegistry::probe(payload, Some(6)) {
+                Some(s) => {
+                    debug!("Protocol recognized as {}", s);
+                    match globalstate.registry.create(s) {
+                        Ok(p)  => {
+                            globalstate.sessions.insert(five_t.clone(), p);
+                        }
+                        Err(_) => error!("Protocol was guessed, but cannot instanciate parser"),
+                    }
+                },
+                None => error!("Could not guess TCP protocol"),
+            }
+        }
+
+    }
+
+    let pp  = globalstate.sessions.get_mut(&five_t).unwrap();
+    let p = &mut (**pp);
+
+    // really parse
+    parse_data_as(p, payload, direction);
+}
+
+fn parse_udp(ipv4: &Ipv4Packet, udp: &UdpPacket, ptype: &mut String, globalstate: &mut GlobalState) {
+    debug!("    UDP {:?}:{} -> {:?}:{}",
+           ipv4.get_source(), udp.get_source(),
+           ipv4.get_destination(), udp.get_destination());
+    //debug!("udp payload: {:?}", udp.payload());
+    let mut payload = udp.payload();
+    // heuristic to catch vss-monitoring extra bytes
+    if ipv4.packet_size() + udp.packet().len() != (ipv4.get_total_length() as usize) {
+        let extra = (ipv4.packet_size() + udp.packet().len()) - (ipv4.get_total_length() as usize);
+        info!("Removing {} extra bytes",extra);
+        let new_len = payload.len() - extra;
+        payload = &payload[0..new_len];
+    };
+    // empty payload
+    if payload.len() == 0 { return; }
+
+    // get 5-tuple
+    let src = ipv4.get_source();
+    let dst = ipv4.get_destination();
+    let (proto,sport,dport) = (17,udp.get_source(),udp.get_destination());
+    let mut five_t = FiveTuple{
+        proto: proto,
+        src: IpAddr::V4(src),
+        dst: IpAddr::V4(dst),
+        src_port: sport,
+        dst_port: dport,
+    };
+    let mut direction : u8 = TO_SERVER;
+    debug!("5T: {:?}", five_t);
+
+    if !globalstate.sessions.contains_key(&five_t) {
+        // not found, lookup reverse hash
+        let rev_five_t = five_t.get_reverse();
+        debug!("rev 5T: {:?}", rev_five_t);
+        if globalstate.sessions.contains_key(&rev_five_t) {
+            debug!("found reverse hash");
+            five_t = rev_five_t;
+            direction = TO_CLIENT;
+        } else {
+            debug!("Creating new session");
+            // probe UDP data
+            match ParserRegistry::probe(payload, Some(17)) {
+                Some(s) => {
+                    debug!("Protocol recognized as {}", s);
+                    match globalstate.registry.create(s) {
+                        Ok(p)  => {
+                            globalstate.sessions.insert(five_t.clone(), p);
+                        }
+                        Err(_) => error!("Protocol was guessed, but cannot instanciate parser"),
+                    }
+                },
+                None => error!("Could not guess UDP protocol"),
+            }
+        }
+
+    }
+
+    let pp  = globalstate.sessions.get_mut(&five_t).unwrap();
+    let p = &mut (**pp);
+
+    // really parse
+    parse_data_as(p, payload, direction);
+}
+
+fn parse(data:&[u8], ptype: &mut String, globalstate: &mut GlobalState) {
+    debug!("----------------------------------------");
+    debug!("raw packet:\n{}", data.to_hex(16));
+
+    //let ref ether = EthernetPacket::new(packet.data).unwrap();
+    let ref ipv4 = Ipv4Packet::new(data).unwrap();
+    // debug!("next level proto: {:?}", ipv4.get_next_level_protocol());
+
+
+    match ipv4.get_next_level_protocol() {
+        IpNextHeaderProtocols::Tcp => {
+            if let Some(tcp) = TcpPacket::new(ipv4.payload()) {
+                parse_tcp(&ipv4, &tcp, ptype, globalstate);
+            }
+        },
+        IpNextHeaderProtocols::Udp => {
+            if let Some(udp) = UdpPacket::new(ipv4.payload()) {
+                parse_udp(&ipv4, &udp, ptype, globalstate);
+            }
+        },
+        _ => ()
+    }
 }
 
 fn callback(data:&[u8], ptype: &String, globalstate: &mut GlobalState)
@@ -192,6 +346,7 @@ fn main() {
 
     while let Ok(packet) = cap.next() {
         let data = get_data(&packet);
-        callback(data, &parser, &mut globalstate);
+        parse(data, &mut parser, &mut globalstate);
+        // callback(data, &parser, &mut globalstate);
     }
 }

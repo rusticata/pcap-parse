@@ -1,4 +1,5 @@
 use rusticata::{RParser,IPsecParser,NtpParser,RadiusParser,SnmpParser,SnmpV3Parser,SSHParser,TlsParser};
+use rusticata::{ipsec_probe,ssh_probe,snmp_probe,snmpv3_probe,tls_probe};
 
 pub struct ParserRegistry {}
 
@@ -11,8 +12,8 @@ impl ParserRegistry {
     pub fn create_ssh<'a>() -> SSHParser<'a> { SSHParser::new(b"SSH") }
     pub fn create_tls<'a>() -> TlsParser<'a> { TlsParser::new(b"TLS") }
 
-    pub fn create<'a>(&self, s: &String) -> Result<Box<RParser>,&'static str> {
-        match s.as_ref() {
+    pub fn create<'a>(&self, s: &str) -> Result<Box<RParser>,&'static str> {
+        match s {
             "ikev2"  => Ok(Box::new(Self::create_ikev2())),
             "ipsec"  => Ok(Box::new(Self::create_ikev2())),
             "ntp"    => Ok(Box::new(Self::create_ntp())),
@@ -24,6 +25,25 @@ impl ParserRegistry {
             "tls"    => Ok(Box::new(Self::create_tls())),
             _        => Err("unknown parser type")
         }
+    }
+
+    pub fn create_from_string<'a>(&self, s: &String) -> Result<Box<RParser>,&'static str> {
+        self.create(s.as_ref())
+    }
+
+    /// Probe data and return protocol if found
+    // XXX return a list of protocols if severals are matching ???
+    pub fn probe(i:&[u8], l3_hint:Option<u16>) -> Option<&'static str> {
+        if l3_hint == None || l3_hint == Some(6) {
+            if tls_probe(i) { return Some("tls"); }
+            if ssh_probe(i) { return Some("ssh"); }
+        }
+        if l3_hint == None || l3_hint == Some(17) {
+            if ipsec_probe(i) { return Some("ikev2"); }
+            if snmp_probe(i) { return Some("snmp"); }
+            if snmpv3_probe(i) { return Some("snmpv3"); }
+        }
+        None
     }
 
     pub fn new() -> ParserRegistry { ParserRegistry{} }
