@@ -309,7 +309,7 @@ fn get_data_linux_cooked<'a>(packet: &'a pcap::Packet) -> &'a[u8] {
 }
 
 fn main() {
-    let _ = env_logger::init().unwrap();
+    let _ = env_logger::init();
 
     let mut verbose = false;
     let mut parser = "tls".to_string();
