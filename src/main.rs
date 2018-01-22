@@ -289,6 +289,10 @@ fn callback(data:&[u8], ptype: &String, globalstate: &mut GlobalState)
     }
 }
 
+fn get_data_raw_ipv4<'a>(packet: &'a pcap::Packet) -> &'a[u8] {
+    packet.data
+}
+
 // BSD loopback encapsulation; the link layer header is a 4-byte field, in host byte order,
 // containing a value of 2 for IPv4 packets, a value of either 24, 28, or 30 for IPv6 packets, a
 // value of 7 for OSI packets, or a value of 23 for IPX packets. All of the IPv6 values correspond
@@ -342,6 +346,7 @@ fn main() {
         pcap::Linktype(0) => get_data_null,
         pcap::Linktype(1) => get_data_ethernet,
         pcap::Linktype(113) => get_data_linux_cooked,
+        pcap::Linktype(228) => get_data_raw_ipv4,
         pcap::Linktype(239) => get_data_nflog,
         e @ _ => panic!("unsupported data link type {:?}", e),
     };
