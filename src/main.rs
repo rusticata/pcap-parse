@@ -28,7 +28,7 @@ extern crate nom;
 use nom::HexDisplay;
 
 extern crate rusticata;
-use rusticata::{RParser,TO_CLIENT,TO_SERVER};
+use rusticata::{RParser,STREAM_TOCLIENT,STREAM_TOSERVER};
 
 mod registry;
 use registry::ParserRegistry;
@@ -91,7 +91,7 @@ fn parse_tcp(ipv4: &Ipv4Packet, tcp: &TcpPacket, ptype: &mut String, globalstate
         src_port: sport,
         dst_port: dport,
     };
-    let mut direction : u8 = TO_SERVER;
+    let mut direction : u8 = STREAM_TOSERVER;
     debug!("5T: {:?}", five_t);
 
     if !globalstate.sessions.contains_key(&five_t) {
@@ -101,7 +101,7 @@ fn parse_tcp(ipv4: &Ipv4Packet, tcp: &TcpPacket, ptype: &mut String, globalstate
         if globalstate.sessions.contains_key(&rev_five_t) {
             debug!("found reverse hash");
             five_t = rev_five_t;
-            direction = TO_CLIENT;
+            direction = STREAM_TOCLIENT;
         } else {
             debug!("Creating new session");
             // probe TCP data
@@ -155,7 +155,7 @@ fn parse_udp(ipv4: &Ipv4Packet, udp: &UdpPacket, ptype: &mut String, globalstate
         src_port: sport,
         dst_port: dport,
     };
-    let mut direction : u8 = TO_SERVER;
+    let mut direction : u8 = STREAM_TOSERVER;
     debug!("5T: {:?}", five_t);
 
     if !globalstate.sessions.contains_key(&five_t) {
@@ -165,7 +165,7 @@ fn parse_udp(ipv4: &Ipv4Packet, udp: &UdpPacket, ptype: &mut String, globalstate
         if globalstate.sessions.contains_key(&rev_five_t) {
             debug!("found reverse hash");
             five_t = rev_five_t;
-            direction = TO_CLIENT;
+            direction = STREAM_TOCLIENT;
         } else {
             debug!("Creating new session");
             // probe UDP data
@@ -226,7 +226,7 @@ fn callback(data:&[u8], ptype: &String, globalstate: &mut GlobalState)
     // debug!("next level proto: {:?}", ipv4.get_next_level_protocol());
 
     let mut five_t = ipv4.get_five_tuple();
-    let mut direction : u8 = TO_SERVER;
+    let mut direction : u8 = STREAM_TOSERVER;
     debug!("5T: {:?}", five_t);
 
     if !globalstate.sessions.contains_key(&five_t) {
@@ -236,7 +236,7 @@ fn callback(data:&[u8], ptype: &String, globalstate: &mut GlobalState)
         if globalstate.sessions.contains_key(&rev_five_t) {
             debug!("found reverse hash");
             five_t = rev_five_t;
-            direction = TO_CLIENT;
+            direction = STREAM_TOCLIENT;
         } else {
             debug!("Creating new session");
             globalstate.sessions.insert(five_t.clone(), globalstate.registry.create(ptype).unwrap());
