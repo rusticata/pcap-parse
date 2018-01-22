@@ -5,6 +5,8 @@ extern crate env_logger;
 extern crate pcap;
 extern crate pnet;
 
+extern crate pcap_parser;
+
 use std::collections::HashMap;
 
 extern crate argparse;

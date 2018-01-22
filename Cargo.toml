@@ -19,3 +19,7 @@ env_logger = "*"
 [dependencies.rusticata]
 # path = "../rusticata"
 git = "https://github.com/rusticata/rusticata.git"
+
+[dependencies.pcap-parser]
+# path = "../pcap-parser"
+git = "https://github.com/rusticata/pcap-parser.git"
