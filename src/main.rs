@@ -36,9 +36,6 @@ use registry::ParserRegistry;
 mod five_tuple;
 use five_tuple::{FiveTuple,ToFiveTuple};
 
-mod pcap_nflog;
-use pcap_nflog::get_data_nflog;
-
 struct GlobalState {
     registry: ParserRegistry,
     sessions: HashMap<FiveTuple, Box<RParser>>,
