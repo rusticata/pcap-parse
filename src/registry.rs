@@ -1,5 +1,5 @@
 use rusticata::{RParser,IPsecParser,NtpParser,OpenVPNTCPParser,OpenVPNUDPParser,RadiusParser,SnmpParser,SnmpV3Parser,SSHParser,TlsParser};
-use rusticata::{ipsec_probe,openvpn_tcp_probe,openvpn_udp_probe,ssh_probe,snmp_probe,snmpv3_probe,tls_probe};
+use rusticata::{ipsec_probe,ntp_probe,openvpn_tcp_probe,openvpn_udp_probe,ssh_probe,snmp_probe,snmpv3_probe,tls_probe};
 
 pub struct ParserRegistry {}
 
@@ -45,6 +45,7 @@ impl ParserRegistry {
         }
         if l3_hint == None || l3_hint == Some(17) {
             if ipsec_probe(i) { return Some("ikev2"); }
+            if ntp_probe(i) { return Some("ntp"); }
             if openvpn_udp_probe(i) { return Some("openvpn_udp"); }
             if snmp_probe(i) { return Some("snmp"); }
             if snmpv3_probe(i) { return Some("snmpv3"); }
