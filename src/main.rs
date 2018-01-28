@@ -2,12 +2,16 @@
 extern crate log;
 extern crate env_logger;
 
-extern crate pcap;
 extern crate pnet;
 
 extern crate pcap_parser;
 
 use std::collections::HashMap;
+
+use std::error::Error;
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::Path;
 
 extern crate argparse;
 use argparse::{ArgumentParser, StoreTrue, Store};
@@ -22,6 +26,8 @@ use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 
 use pnet::packet::ip::IpNextHeaderProtocols;
+
+use pcap_parser::Capture;
 
 #[macro_use]
 extern crate nom;
@@ -61,19 +67,22 @@ fn parse_data_as(parser: &mut RParser, i: &[u8], direction: u8)
     parser.parse(i, direction);
 }
 
-fn parse_tcp(ipv4: &Ipv4Packet, tcp: &TcpPacket, ptype: &mut String, globalstate: &mut GlobalState) {
+fn parse_tcp(ipv4: &Ipv4Packet, tcp: &TcpPacket, _ptype: &String, globalstate: &mut GlobalState) {
     debug!("    TCP {:?}:{} -> {:?}:{}",
            ipv4.get_source(), tcp.get_source(),
            ipv4.get_destination(), tcp.get_destination());
     //debug!("tcp payload: {:?}", tcp.payload());
     let mut payload = tcp.payload();
     // heuristic to catch vss-monitoring extra bytes
-    if ipv4.packet_size() + tcp.packet().len() != (ipv4.get_total_length() as usize) {
-        let extra = (ipv4.packet_size() + tcp.packet().len()) - (ipv4.get_total_length() as usize);
-        info!("Removing {} extra bytes",extra);
-        let new_len = payload.len() - extra;
-        payload = &payload[0..new_len];
-    };
+    // if ipv4.packet_size() + tcp.packet().len() != (ipv4.get_total_length() as usize) {
+    //     info!("ipv4.packet_size: {}", ipv4.packet_size());
+    //     info!("tcp.packet.len: {}", tcp.packet().len());
+    //     info!("ipv4.get_total_length: {}", ipv4.get_total_length());
+    //     let extra = (ipv4.packet_size() + tcp.packet().len()) - (ipv4.get_total_length() as usize);
+    //     info!("Removing {} extra bytes",extra);
+    //     let new_len = payload.len() - extra;
+    //     payload = &payload[0..new_len];
+    // };
     // empty payload (e.g. SYN)
     if payload.len() == 0 { return; }
 
@@ -125,19 +134,19 @@ fn parse_tcp(ipv4: &Ipv4Packet, tcp: &TcpPacket, ptype: &mut String, globalstate
     parse_data_as(p, payload, direction);
 }
 
-fn parse_udp(ipv4: &Ipv4Packet, udp: &UdpPacket, ptype: &mut String, globalstate: &mut GlobalState) {
+fn parse_udp(ipv4: &Ipv4Packet, udp: &UdpPacket, _ptype: &String, globalstate: &mut GlobalState) {
     debug!("    UDP {:?}:{} -> {:?}:{}",
            ipv4.get_source(), udp.get_source(),
            ipv4.get_destination(), udp.get_destination());
     //debug!("udp payload: {:?}", udp.payload());
     let mut payload = udp.payload();
     // heuristic to catch vss-monitoring extra bytes
-    if ipv4.packet_size() + udp.packet().len() != (ipv4.get_total_length() as usize) {
-        let extra = (ipv4.packet_size() + udp.packet().len()) - (ipv4.get_total_length() as usize);
-        info!("Removing {} extra bytes",extra);
-        let new_len = payload.len() - extra;
-        payload = &payload[0..new_len];
-    };
+    // XXX if ipv4.packet_size() + udp.packet().len() != (ipv4.get_total_length() as usize) {
+    // XXX     let extra = (ipv4.packet_size() + udp.packet().len()) - (ipv4.get_total_length() as usize);
+    // XXX     info!("Removing {} extra bytes",extra);
+    // XXX     let new_len = payload.len() - extra;
+    // XXX     payload = &payload[0..new_len];
+    // XXX };
     // empty payload
     if payload.len() == 0 { return; }
 
@@ -189,7 +198,7 @@ fn parse_udp(ipv4: &Ipv4Packet, udp: &UdpPacket, ptype: &mut String, globalstate
     parse_data_as(p, payload, direction);
 }
 
-fn parse(data:&[u8], ptype: &mut String, globalstate: &mut GlobalState) {
+fn parse(data:&[u8], ptype: &String, globalstate: &mut GlobalState) {
     debug!("----------------------------------------");
     debug!("raw packet:\n{}", data.to_hex(16));
 
@@ -213,81 +222,23 @@ fn parse(data:&[u8], ptype: &mut String, globalstate: &mut GlobalState) {
     }
 }
 
-fn callback(data:&[u8], ptype: &String, globalstate: &mut GlobalState)
-{
-    debug!("----------------------------------------");
-    debug!("raw packet:\n{}", data.to_hex(16));
-
-    //let ref ether = EthernetPacket::new(packet.data).unwrap();
-    let ref ipv4 = Ipv4Packet::new(data).unwrap();
-    // debug!("next level proto: {:?}", ipv4.get_next_level_protocol());
-
-    let mut five_t = ipv4.get_five_tuple();
-    let mut direction : u8 = STREAM_TOSERVER;
-    debug!("5T: {:?}", five_t);
-
-    if !globalstate.sessions.contains_key(&five_t) {
-        // not found, lookup reverse hash
-        let rev_five_t = five_t.get_reverse();
-        debug!("rev 5T: {:?}", rev_five_t);
-        if globalstate.sessions.contains_key(&rev_five_t) {
-            debug!("found reverse hash");
-            five_t = rev_five_t;
-            direction = STREAM_TOCLIENT;
-        } else {
-            debug!("Creating new session");
-            globalstate.sessions.insert(five_t.clone(), globalstate.registry.create(ptype).unwrap());
-        }
-    }
-    let pp  = globalstate.sessions.get_mut(&five_t).unwrap();
-    let p = &mut (**pp);
-
-    if ipv4.get_next_level_protocol() == IpNextHeaderProtocols::Tcp {
-        match TcpPacket::new(ipv4.payload()) {
-            Some(ref tcp) => {
-                debug!("    TCP {:?}:{} -> {:?}:{}",
-                       ipv4.get_source(), tcp.get_source(),
-                       ipv4.get_destination(), tcp.get_destination());
-                //debug!("tcp payload: {:?}", tcp.payload());
-                let mut payload = tcp.payload();
-                // heuristic to catch vss-monitoring extra bytes
-                if ipv4.packet_size() + tcp.packet().len() != (ipv4.get_total_length() as usize) {
-                    let extra = (ipv4.packet_size() + tcp.packet().len()) - (ipv4.get_total_length() as usize);
-                    info!("Removing {} extra bytes",extra);
-                    let new_len = payload.len() - extra;
-                    payload = &payload[0..new_len];
-                };
-
-                // XXX check if data is indeed TLS/...
-                parse_data_as(p, payload, direction);
-            },
-            None => (), // not a TCP packet, ignore
-        }
-    }
-    if ipv4.get_next_level_protocol() == IpNextHeaderProtocols::Udp {
-        match UdpPacket::new(ipv4.payload()) {
-            Some(ref udp) => {
-                debug!("    UDP {:?}:{} -> {:?}:{}",
-                       ipv4.get_source(), udp.get_source(),
-                       ipv4.get_destination(), udp.get_destination());
-                let mut payload = udp.payload();
-                // heuristic to catch vss-monitoring extra bytes
-                if ipv4.packet_size() + udp.packet().len() != (ipv4.get_total_length() as usize) {
-                    let extra = (ipv4.packet_size() + udp.packet().len()) - (ipv4.get_total_length() as usize);
-                    info!("Removing {} extra bytes",extra);
-                    let new_len = payload.len() - extra;
-                    payload = &payload[0..new_len];
-                };
-                // XXX check if data is indeed IPsec/NTP/...
-                parse_data_as(p, payload, direction);
-            },
-            None => (), // not a UDP packet, ignore
-        }
-    }
+fn get_data_raw<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
+    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
+    let maxlen = packet.header.caplen as usize;
+    &packet.data[..maxlen]
 }
 
-fn get_data_raw_ipv4<'a>(packet: &'a pcap::Packet) -> &'a[u8] {
-    packet.data
+/// See http://www.tcpdump.org/linktypes/LINKTYPE_LINUX_SLL.html
+fn get_data_linux_cooked<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
+    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
+    let maxlen = packet.header.caplen as usize;
+    &packet.data[16..maxlen]
+}
+
+fn get_data_raw_ipv4<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
+    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
+    let maxlen = packet.header.caplen as usize;
+    &packet.data[..maxlen]
 }
 
 // BSD loopback encapsulation; the link layer header is a 4-byte field, in host byte order,
@@ -298,17 +249,42 @@ fn get_data_raw_ipv4<'a>(packet: &'a pcap::Packet) -> &'a[u8] {
 // captured; if a live capture is being done, ``host byte order'' is the byte order of the machine
 // capturing the packets, but if a ``savefile'' is being read, the byte order is not necessarily
 // that of the machine reading the capture file.
-fn get_data_null<'a>(packet: &'a pcap::Packet) -> &'a[u8] {
-    &packet.data[4..]
+fn get_data_null<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
+    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
+    let maxlen = packet.header.caplen as usize;
+    &packet.data[4..maxlen]
 }
 
-fn get_data_ethernet<'a>(packet: &'a pcap::Packet) -> &'a[u8] {
-    &packet.data[14..]
+fn get_data_ethernet<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
+    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
+    let maxlen = packet.header.caplen as usize;
+    &packet.data[14..maxlen]
 }
 
-/// See http://www.tcpdump.org/linktypes/LINKTYPE_LINUX_SLL.html
-fn get_data_linux_cooked<'a>(packet: &'a pcap::Packet) -> &'a[u8] {
-    &packet.data[16..]
+fn iter_capture<C: Capture>(cap: &mut C, ptype: &String, mut globalstate: &mut GlobalState) {
+    let get_data = match cap.get_datalink() {
+        pcap_parser::Linktype(0) => get_data_null,
+        pcap_parser::Linktype(1) => get_data_ethernet,
+        pcap_parser::Linktype(101) => get_data_raw,
+        pcap_parser::Linktype(113) => get_data_linux_cooked,
+        pcap_parser::Linktype(228) => get_data_raw_ipv4,
+        pcap_parser::Linktype(239) => pcap_parser::get_data_nflog,
+        pcap_parser::Linktype(x)   => panic!("Unsupported link type {}", x),
+    };
+    //
+    loop {
+        match cap.next() {
+            Some(packet) => {
+                debug!("packet: {:?}", packet);
+                let data = get_data(&packet);
+                parse(data, ptype, &mut globalstate);
+            },
+            None => {
+                // debug!("parse_pcap_frame failed: {:?}", e);
+                break;
+            },
+        }
+    }
 }
 
 fn main() {
@@ -335,22 +311,38 @@ fn main() {
 
     let mut globalstate = GlobalState::new();
 
-    let mut cap = pcap::Capture::from_file(filename).unwrap();
-    println!("datalink: {:?}",cap.get_datalink());
-
-    // See http://www.tcpdump.org/linktypes.html
-    let get_data = match cap.get_datalink() {
-        pcap::Linktype(0) => get_data_null,
-        pcap::Linktype(1) => get_data_ethernet,
-        pcap::Linktype(113) => get_data_linux_cooked,
-        pcap::Linktype(228) => get_data_raw_ipv4,
-        pcap::Linktype(239) => get_data_nflog,
-        e @ _ => panic!("unsupported data link type {:?}", e),
+    let path = Path::new(&filename);
+    let display = path.display();
+    let mut file = match File::open(path) {
+        // The `description` method of `io::Error` returns a string that
+        // describes the error
+        Err(why) => panic!("couldn't open {}: {}", display,
+                           why.description()),
+        Ok(file) => file,
     };
 
-    while let Ok(packet) = cap.next() {
-        let data = get_data(&packet);
-        parse(data, &mut parser, &mut globalstate);
-        // callback(data, &parser, &mut globalstate);
+    let mut buffer = Vec::new();
+    match file.read_to_end(&mut buffer) {
+        Err(why) => panic!("couldn't open {}: {}", display,
+                           why.description()),
+        Ok(_) => (),
+    };
+
+    // try pcap first
+    match pcap_parser::PcapCapture::from_file(&buffer) {
+        Ok(mut cap) => {
+            debug!("PCAP found");
+            iter_capture(&mut cap, &parser, &mut globalstate);
+            return;
+        },
+        _e => (), // debug!("probing for PCAP failed: {:?}", e),
+    }
+
+    // try pcapng
+    match pcap_parser::PcapNGCapture::from_file(&buffer) {
+        Ok(mut cap) => {
+            iter_capture(&mut cap, &parser, &mut globalstate);
+        },
+        _e  => (),
     }
 }
