@@ -22,6 +22,7 @@ use pnet::packet::PacketSize;
 use pnet::packet::Packet;
 //use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::udp::UdpPacket;
 
@@ -67,10 +68,10 @@ fn parse_data_as(parser: &mut RParser, i: &[u8], direction: u8)
     parser.parse(i, direction);
 }
 
-fn parse_tcp(ipv4: &Ipv4Packet, tcp: &TcpPacket, _ptype: &String, globalstate: &mut GlobalState) {
+fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: &String, globalstate: &mut GlobalState) {
     debug!("    TCP {:?}:{} -> {:?}:{}",
-           ipv4.get_source(), tcp.get_source(),
-           ipv4.get_destination(), tcp.get_destination());
+           src, tcp.get_source(),
+           dst, tcp.get_destination());
     //debug!("tcp payload: {:?}", tcp.payload());
     let mut payload = tcp.payload();
     // heuristic to catch vss-monitoring extra bytes
@@ -87,13 +88,11 @@ fn parse_tcp(ipv4: &Ipv4Packet, tcp: &TcpPacket, _ptype: &String, globalstate: &
     if payload.len() == 0 { return; }
 
     // get 5-tuple
-    let src = ipv4.get_source();
-    let dst = ipv4.get_destination();
     let (proto,sport,dport) = (6,tcp.get_source(),tcp.get_destination());
     let mut five_t = FiveTuple{
         proto: proto,
-        src: IpAddr::V4(src),
-        dst: IpAddr::V4(dst),
+        src: src,
+        dst: dst,
         src_port: sport,
         dst_port: dport,
     };
@@ -134,10 +133,10 @@ fn parse_tcp(ipv4: &Ipv4Packet, tcp: &TcpPacket, _ptype: &String, globalstate: &
     parse_data_as(p, payload, direction);
 }
 
-fn parse_udp(ipv4: &Ipv4Packet, udp: &UdpPacket, _ptype: &String, globalstate: &mut GlobalState) {
+fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: &String, globalstate: &mut GlobalState) {
     debug!("    UDP {:?}:{} -> {:?}:{}",
-           ipv4.get_source(), udp.get_source(),
-           ipv4.get_destination(), udp.get_destination());
+           src, udp.get_source(),
+           dst, udp.get_destination());
     //debug!("udp payload: {:?}", udp.payload());
     let mut payload = udp.payload();
     // heuristic to catch vss-monitoring extra bytes
@@ -151,13 +150,11 @@ fn parse_udp(ipv4: &Ipv4Packet, udp: &UdpPacket, _ptype: &String, globalstate: &
     if payload.len() == 0 { return; }
 
     // get 5-tuple
-    let src = ipv4.get_source();
-    let dst = ipv4.get_destination();
     let (proto,sport,dport) = (17,udp.get_source(),udp.get_destination());
     let mut five_t = FiveTuple{
         proto: proto,
-        src: IpAddr::V4(src),
-        dst: IpAddr::V4(dst),
+        src: src,
+        dst: dst,
         src_port: sport,
         dst_port: dport,
     };
@@ -202,23 +199,52 @@ fn parse(data:&[u8], ptype: &String, globalstate: &mut GlobalState) {
     debug!("----------------------------------------");
     debug!("raw packet:\n{}", data.to_hex(16));
 
-    //let ref ether = EthernetPacket::new(packet.data).unwrap();
-    let ref ipv4 = Ipv4Packet::new(data).unwrap();
-    // debug!("next level proto: {:?}", ipv4.get_next_level_protocol());
+    if data.is_empty() { return; }
 
+    // check L3 protocol
+    match data[0] & 0xf0 {
+        0x40 => { // IPv4
+            //let ref ether = EthernetPacket::new(packet.data).unwrap();
+            let ref ipv4 = Ipv4Packet::new(data).unwrap();
+            // debug!("next level proto: {:?}", ipv4.get_next_level_protocol());
 
-    match ipv4.get_next_level_protocol() {
-        IpNextHeaderProtocols::Tcp => {
-            if let Some(tcp) = TcpPacket::new(ipv4.payload()) {
-                parse_tcp(&ipv4, &tcp, ptype, globalstate);
+            let src = IpAddr::V4(ipv4.get_source());
+            let dst = IpAddr::V4(ipv4.get_destination());
+
+            match ipv4.get_next_level_protocol() {
+                IpNextHeaderProtocols::Tcp => {
+                    if let Some(tcp) = TcpPacket::new(ipv4.payload()) {
+                        parse_tcp(src, dst, &tcp, ptype, globalstate);
+                    }
+                },
+                IpNextHeaderProtocols::Udp => {
+                    if let Some(udp) = UdpPacket::new(ipv4.payload()) {
+                        parse_udp(src, dst, &udp, ptype, globalstate);
+                    }
+                },
+                _ => ()
             }
         },
-        IpNextHeaderProtocols::Udp => {
-            if let Some(udp) = UdpPacket::new(ipv4.payload()) {
-                parse_udp(&ipv4, &udp, ptype, globalstate);
+        0x60 => { // IPv6
+            let ref ipv6 = Ipv6Packet::new(data).unwrap();
+            debug!("next level proto: {:?}", ipv6.get_next_header());
+            let src = IpAddr::V6(ipv6.get_source());
+            let dst = IpAddr::V6(ipv6.get_destination());
+            match ipv6.get_next_header() {
+                IpNextHeaderProtocols::Tcp => {
+                    if let Some(tcp) = TcpPacket::new(ipv6.payload()) {
+                        parse_tcp(src, dst, &tcp, ptype, globalstate);
+                    }
+                },
+                IpNextHeaderProtocols::Udp => {
+                    if let Some(udp) = UdpPacket::new(ipv6.payload()) {
+                        parse_udp(src, dst, &udp, ptype, globalstate);
+                    }
+                },
+                _ => ()
             }
         },
-        _ => ()
+        _ => { error!("Unknown layer 3 protocol"); }
     }
 }
 
