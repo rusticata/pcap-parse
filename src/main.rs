@@ -272,18 +272,9 @@ fn iter_capture<C: Capture>(cap: &mut C, ptype: &String, mut globalstate: &mut G
         pcap_parser::Linktype(x)   => panic!("Unsupported link type {}", x),
     };
     //
-    loop {
-        match cap.next() {
-            Some(packet) => {
-                debug!("packet: {:?}", packet);
-                let data = get_data(&packet);
-                parse(data, ptype, &mut globalstate);
-            },
-            None => {
-                // debug!("parse_pcap_frame failed: {:?}", e);
-                break;
-            },
-        }
+    for packet in cap.iter_packets() {
+        let data = get_data(&packet);
+        parse(data, ptype, &mut globalstate);
     }
 }
 
