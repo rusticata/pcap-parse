@@ -287,10 +287,10 @@ fn get_data_ethernet<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
     &packet.data[14..maxlen]
 }
 
-fn iter_capture<C: Capture>(cap: &mut C, ptype: &String, mut globalstate: &mut GlobalState) {
+fn iter_capture(cap: &mut Capture, ptype: &String, mut globalstate: &mut GlobalState) {
     let get_data = match cap.get_datalink() {
-        pcap_parser::Linktype(0) => get_data_null,
-        pcap_parser::Linktype(1) => get_data_ethernet,
+        pcap_parser::Linktype(0)   => get_data_null,
+        pcap_parser::Linktype(1)   => get_data_ethernet,
         pcap_parser::Linktype(101) => get_data_raw,
         pcap_parser::Linktype(113) => get_data_linux_cooked,
         pcap_parser::Linktype(228) => get_data_raw_ipv4,
@@ -302,6 +302,27 @@ fn iter_capture<C: Capture>(cap: &mut C, ptype: &String, mut globalstate: &mut G
         let data = get_data(&packet);
         parse(data, ptype, &mut globalstate);
     }
+}
+
+fn try_open_capture<'a>(buffer: &'a[u8]) -> Result<Box<Capture + 'a>,&'static str> {
+    // try pcap first
+    match pcap_parser::PcapCapture::from_file(&buffer) {
+        Ok(cap) => {
+            debug!("PCAP found");
+            return Ok(Box::new(cap));
+        },
+        _e => (), // debug!("probing for PCAP failed: {:?}", e),
+    }
+
+    // try pcapng
+    match pcap_parser::PcapNGCapture::from_file(&buffer) {
+        Ok(cap) => {
+            return Ok(Box::new(cap));
+        },
+        _e  => (),
+    }
+
+    Err("Format not recognized")
 }
 
 fn main() {
@@ -345,21 +366,16 @@ fn main() {
         Ok(_) => (),
     };
 
-    // try pcap first
-    match pcap_parser::PcapCapture::from_file(&buffer) {
+    match try_open_capture(&buffer) {
         Ok(mut cap) => {
-            debug!("PCAP found");
-            iter_capture(&mut cap, &parser, &mut globalstate);
-            return;
+            iter_capture(cap.as_mut(), &parser, &mut globalstate);
         },
-        _e => (), // debug!("probing for PCAP failed: {:?}", e),
+        Err(e) => debug!("Failed to open file: {:?}", e),
     }
 
-    // try pcapng
-    match pcap_parser::PcapNGCapture::from_file(&buffer) {
-        Ok(mut cap) => {
-            iter_capture(&mut cap, &parser, &mut globalstate);
-        },
-        _e  => (),
+    if verbose {
+        debug!("Done.");
+        debug!("Stats:");
+        debug!("    Num sessions: {}", globalstate.sessions.len());
     }
 }
