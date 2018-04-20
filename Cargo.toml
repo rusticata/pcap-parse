@@ -10,7 +10,7 @@ authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 
 [dependencies]
 argparse = "*"
-pnet = "0.20.0"
+pnet = "0.21.0"
 nom = "^3.0"
 log = "*"
 env_logger = "*"
