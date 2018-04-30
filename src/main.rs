@@ -205,7 +205,7 @@ fn parse(data:&[u8], ptype: &String, globalstate: &mut GlobalState) {
     match data[0] & 0xf0 {
         0x40 => { // IPv4
             //let ref ether = EthernetPacket::new(packet.data).unwrap();
-            let ref ipv4 = Ipv4Packet::new(data).unwrap();
+            let ipv4 = &Ipv4Packet::new(data).unwrap();
             // debug!("next level proto: {:?}", ipv4.get_next_level_protocol());
 
             let src = IpAddr::V4(ipv4.get_source());
@@ -226,7 +226,7 @@ fn parse(data:&[u8], ptype: &String, globalstate: &mut GlobalState) {
             }
         },
         0x60 => { // IPv6
-            let ref ipv6 = Ipv6Packet::new(data).unwrap();
+            let ipv6 = &Ipv6Packet::new(data).unwrap();
             debug!("next level proto: {:?}", ipv6.get_next_header());
             let src = IpAddr::V6(ipv6.get_source());
             let dst = IpAddr::V6(ipv6.get_destination());
@@ -326,7 +326,7 @@ fn try_open_capture<'a>(buffer: &'a[u8]) -> Result<Box<Capture + 'a>,&'static st
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
 
     let mut verbose = false;
     let mut parser = "tls".to_string();
