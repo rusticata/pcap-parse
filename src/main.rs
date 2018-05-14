@@ -120,7 +120,7 @@ fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: &String, globals
                         Err(_) => error!("Protocol was guessed, but cannot instanciate parser"),
                     }
                 },
-                None => error!("Could not guess TCP protocol"),
+                None => { warn!("Could not guess TCP protocol"); return; },
             }
         }
 
@@ -182,7 +182,7 @@ fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: &String, globals
                         Err(_) => error!("Protocol was guessed, but cannot instanciate parser"),
                     }
                 },
-                None => error!("Could not guess UDP protocol"),
+                None => { warn!("Could not guess UDP protocol"); return; },
             }
         }
 
