@@ -34,10 +34,6 @@ impl ParserRegistry {
         }
     }
 
-    pub fn create_from_string<'a>(&self, s: &String) -> Result<Box<RParser>,&'static str> {
-        self.create(s.as_ref())
-    }
-
     /// Probe data and return protocol if found
     // XXX return a list of protocols if severals are matching ???
     pub fn probe(i:&[u8], l3_hint:Option<u16>) -> Option<&'static str> {
