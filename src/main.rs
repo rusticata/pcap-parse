@@ -13,8 +13,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 
-extern crate argparse;
-use argparse::{ArgumentParser, StoreTrue, Store};
+extern crate clap;
+use clap::{Arg,App,crate_version};
 
 use std::net::IpAddr;
 
@@ -67,7 +67,7 @@ fn parse_data_as(parser: &mut RParser, i: &[u8], direction: u8)
     parser.parse(i, direction);
 }
 
-fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: &str, globalstate: &mut GlobalState) {
+fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: Option<&str>, globalstate: &mut GlobalState) {
     debug!("    TCP {:?}:{} -> {:?}:{}",
            src, tcp.get_source(),
            dst, tcp.get_destination());
@@ -132,7 +132,7 @@ fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: &str, globalstat
     parse_data_as(p, payload, direction);
 }
 
-fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: &str, globalstate: &mut GlobalState) {
+fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: Option<&str>, globalstate: &mut GlobalState) {
     debug!("    UDP {:?}:{} -> {:?}:{}",
            src, udp.get_source(),
            dst, udp.get_destination());
@@ -194,7 +194,7 @@ fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: &str, globalstat
     parse_data_as(p, payload, direction);
 }
 
-fn parse(data:&[u8], ptype: &str, globalstate: &mut GlobalState) {
+fn parse(data:&[u8], ptype: Option<&str>, globalstate: &mut GlobalState) {
     debug!("----------------------------------------");
     debug!("raw packet:\n{}", data.to_hex(16));
 
@@ -286,7 +286,7 @@ fn get_data_ethernet<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
     &packet.data[14..maxlen]
 }
 
-fn iter_capture(cap: &mut Capture, ptype: &String, mut globalstate: &mut GlobalState) {
+fn iter_capture(cap: &mut Capture, ptype: Option<&str>, mut globalstate: &mut GlobalState) {
     let get_data = match cap.get_datalink() {
         pcap_parser::Linktype(0)   => get_data_null,
         pcap_parser::Linktype(1)   => get_data_ethernet,
@@ -327,24 +327,28 @@ fn try_open_capture<'a>(buffer: &'a[u8]) -> Result<Box<Capture + 'a>,&'static st
 fn main() {
     env_logger::init();
 
-    let mut verbose = false;
-    let mut parser = "tls".to_string();
-    let mut filename = "".to_string();
+    let matches = App::new("Pcap parsing tool")
+        .version(crate_version!())
+        .author("Pierre Chifflier")
+        .about("Parse pcap file and apply application-layer parsers")
+        .arg(Arg::with_name("verbose")
+             .help("Be verbose")
+             .short("v")
+             .long("verbose"))
+        .arg(Arg::with_name("parser")
+             .help("Name of parser to use")
+             .short("p")
+             .long("parser")
+             .takes_value(true))
+        .arg(Arg::with_name("INPUT")
+             .help("Input file name")
+             .required(true)
+             .index(1))
+        .get_matches();
 
-    {  // this block limits scope of borrows by ap.refer() method
-        let mut ap = ArgumentParser::new();
-        ap.set_description("Greet somebody.");
-        ap.refer(&mut verbose)
-            .add_option(&["-v", "--verbose"], StoreTrue,
-            "Be verbose");
-        ap.refer(&mut parser)
-            .add_option(&["-p","--parser"], Store,
-            "Parser to use");
-        ap.refer(&mut filename)
-            .add_option(&["-f","--file"], Store,
-            "File to parse");
-        ap.parse_args_or_exit();
-    }
+    let filename = matches.value_of("INPUT").unwrap();
+    let parser = matches.value_of("parser");
+    let verbose = matches.is_present("verbose");
 
     let mut globalstate = GlobalState::new();
 
@@ -367,7 +371,7 @@ fn main() {
 
     match try_open_capture(&buffer) {
         Ok(mut cap) => {
-            iter_capture(cap.as_mut(), &parser, &mut globalstate);
+            iter_capture(cap.as_mut(), parser, &mut globalstate);
         },
         Err(e) => debug!("Failed to open file: {:?}", e),
     }

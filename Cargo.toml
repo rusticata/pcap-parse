@@ -9,12 +9,15 @@ repository = "https://github.com/rusticata/pcap-parse.git"
 authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 
 [dependencies]
-argparse = "*"
 pnet = "0.21.0"
 nom = "4.0"
-log = "*"
-env_logger = "*"
+log = "0.4.6"
+env_logger = "0.6"
 pcap-parser = "0.2"
+
+[dependencies.clap]
+version = "2"
+default-features = false
 
 [dependencies.rusticata]
 # path = "../rusticata"
