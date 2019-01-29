@@ -11,14 +11,21 @@ authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 [dependencies]
 argparse = "*"
 pnet = "0.21.0"
-nom = "^3.0"
+nom = "4.0"
 log = "*"
 env_logger = "*"
+pcap-parser = "0.2"
 
 [dependencies.rusticata]
 # path = "../rusticata"
 git = "https://github.com/rusticata/rusticata.git"
 
-[dependencies.pcap-parser]
-# path = "../pcap-parser"
-git = "https://github.com/rusticata/pcap-parser.git"
+# [patch.crates-io]
+# # rusticata-macros = {path="../rusticata-macros"}
+# # der-parser = {path="../der-parser"}
+# # ipsec-parser = {path="../ipsec-parser"}
+# # kerberos-parser = {path="../kerberos-parser"}
+# # ntp-parser = {path="../ntp-parser"}
+# tls-parser = {path="../tls-parser"}
+# # x509-parser = {path="../x509-parser"}
+# snmp-parser = {path="../snmp-parser"}

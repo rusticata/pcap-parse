@@ -18,7 +18,7 @@ use argparse::{ArgumentParser, StoreTrue, Store};
 
 use std::net::IpAddr;
 
-use pnet::packet::PacketSize;
+//use pnet::packet::PacketSize;
 use pnet::packet::Packet;
 //use pnet::packet::ethernet::EthernetPacket;
 use pnet::packet::ipv4::Ipv4Packet;
@@ -30,7 +30,6 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 
 use pcap_parser::Capture;
 
-#[macro_use]
 extern crate nom;
 use nom::HexDisplay;
 
@@ -41,7 +40,7 @@ mod registry;
 use registry::ParserRegistry;
 
 mod five_tuple;
-use five_tuple::{FiveTuple,ToFiveTuple};
+use five_tuple::FiveTuple;
 
 struct GlobalState {
     registry: ParserRegistry,
@@ -68,12 +67,12 @@ fn parse_data_as(parser: &mut RParser, i: &[u8], direction: u8)
     parser.parse(i, direction);
 }
 
-fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: &String, globalstate: &mut GlobalState) {
+fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: &str, globalstate: &mut GlobalState) {
     debug!("    TCP {:?}:{} -> {:?}:{}",
            src, tcp.get_source(),
            dst, tcp.get_destination());
     //debug!("tcp payload: {:?}", tcp.payload());
-    let mut payload = tcp.payload();
+    let payload = tcp.payload();
     // heuristic to catch vss-monitoring extra bytes
     // if ipv4.packet_size() + tcp.packet().len() != (ipv4.get_total_length() as usize) {
     //     info!("ipv4.packet_size: {}", ipv4.packet_size());
@@ -133,12 +132,12 @@ fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: &String, globals
     parse_data_as(p, payload, direction);
 }
 
-fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: &String, globalstate: &mut GlobalState) {
+fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: &str, globalstate: &mut GlobalState) {
     debug!("    UDP {:?}:{} -> {:?}:{}",
            src, udp.get_source(),
            dst, udp.get_destination());
     //debug!("udp payload: {:?}", udp.payload());
-    let mut payload = udp.payload();
+    let payload = udp.payload();
     // heuristic to catch vss-monitoring extra bytes
     // XXX if ipv4.packet_size() + udp.packet().len() != (ipv4.get_total_length() as usize) {
     // XXX     let extra = (ipv4.packet_size() + udp.packet().len()) - (ipv4.get_total_length() as usize);
@@ -195,7 +194,7 @@ fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: &String, globals
     parse_data_as(p, payload, direction);
 }
 
-fn parse(data:&[u8], ptype: &String, globalstate: &mut GlobalState) {
+fn parse(data:&[u8], ptype: &str, globalstate: &mut GlobalState) {
     debug!("----------------------------------------");
     debug!("raw packet:\n{}", data.to_hex(16));
 
