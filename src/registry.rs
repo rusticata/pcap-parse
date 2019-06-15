@@ -10,8 +10,8 @@ impl ParserRegistry {
     pub fn create_openvpn_tcp<'a>() -> OpenVPNTCPParser<'a> { OpenVPNTCPParser::new(b"OpenVPN/TCP") }
     pub fn create_openvpn_udp<'a>() -> OpenVPNUDPParser<'a> { OpenVPNUDPParser::new(b"OpenVPN/UDP") }
     pub fn create_radius<'a>() -> RadiusParser<'a> { RadiusParser::new(b"Radius") }
-    pub fn create_snmpv1<'a>() -> SnmpParser<'a> { SnmpParser::new(b"SNMPv1", 1) }
-    pub fn create_snmpv3<'a>() -> SnmpV3Parser<'a> { SnmpV3Parser::new(b"SNMPv3") }
+    pub fn create_snmpv1<'a>() -> SNMPParser<'a> { SNMPParser::new(b"SNMPv1", 1) }
+    pub fn create_snmpv3<'a>() -> SNMPv3Parser<'a> { SNMPv3Parser::new(b"SNMPv3") }
     pub fn create_ssh<'a>() -> SSHParser<'a> { SSHParser::new(b"SSH") }
     pub fn create_tls<'a>() -> TlsParser<'a> { TlsParser::new(b"TLS") }
 
