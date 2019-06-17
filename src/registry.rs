@@ -6,7 +6,10 @@ pub struct ParserRegistry {}
 lazy_static! {
     static ref BUILDER_MAP: HashMap<&'static str, Box<RBuilder>> = {
         let mut m = HashMap::new();
+        m.insert("dns_udp", Box::new(DnsUDPBuilder{}) as Box<_>);
+        m.insert("dns_tcp", Box::new(DnsTCPBuilder{}) as Box<_>);
         m.insert("ikev2", Box::new(IPsecBuilder{}) as Box<_>);
+        m.insert("ikev2_natt", Box::new(IPsecNatTBuilder{}) as Box<_>);
         m.insert("kerberos_probe_tcp", Box::new(KerberosTCPBuilder{}) as Box<_>);
         m.insert("kerberos_probe_udp", Box::new(KerberosUDPBuilder{}) as Box<_>);
         m.insert("ntp", Box::new(NTPBuilder{}) as Box<_>);
@@ -41,13 +44,16 @@ impl ParserRegistry {
             debug!("probe: protocol {} not recognized, using regular tests", parser_name);
         }
         if l3_hint == None || l3_hint == Some(6) {
+            if dns_probe_tcp(i) { return Some("dns_tcp".to_string()); }
             if tls_probe(i) { return Some("tls".to_string()); }
             if ssh_probe(i) { return Some("ssh".to_string()); }
             if kerberos_probe_tcp(i) { return Some("kerberos_tcp".to_string()); }
             if openvpn_tcp_probe(i) { return Some("openvpn_tcp".to_string()); }
         }
         if l3_hint == None || l3_hint == Some(17) {
+            if dns_probe_udp(i) { return Some("dns_udp".to_string()); }
             if ipsec_probe(i) { return Some("ikev2".to_string()); }
+            if ikev2_natt_probe(i) { return Some("ikev2_natt".to_string()); }
             if kerberos_probe_udp(i) { return Some("kerberos_udp".to_string()); }
             if ntp_probe(i) { return Some("ntp".to_string()); }
             if openvpn_udp_probe(i) { return Some("openvpn_udp".to_string()); }
