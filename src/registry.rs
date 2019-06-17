@@ -1,55 +1,59 @@
 use rusticata::*;
+use std::collections::HashMap;
 
 pub struct ParserRegistry {}
 
-impl ParserRegistry {
-    pub fn create_ikev2<'a>() -> IPsecParser<'a> { IPsecParser::new(b"IKEv2") }
-    pub fn create_kerberos_tcp<'a>() -> KerberosParserTCP<'a> { KerberosParserTCP::new(b"Kerberos/TCP") }
-    pub fn create_kerberos_udp<'a>() -> KerberosParserUDP<'a> { KerberosParserUDP::new(b"Kerberos/UDP") }
-    pub fn create_ntp<'a>() -> NtpParser<'a> { NtpParser::new(b"NTP") }
-    pub fn create_openvpn_tcp<'a>() -> OpenVPNTCPParser<'a> { OpenVPNTCPParser::new(b"OpenVPN/TCP") }
-    pub fn create_openvpn_udp<'a>() -> OpenVPNUDPParser<'a> { OpenVPNUDPParser::new(b"OpenVPN/UDP") }
-    pub fn create_radius<'a>() -> RadiusParser<'a> { RadiusParser::new(b"Radius") }
-    pub fn create_snmpv1<'a>() -> SNMPParser<'a> { SNMPParser::new(b"SNMPv1", 1) }
-    pub fn create_snmpv3<'a>() -> SNMPv3Parser<'a> { SNMPv3Parser::new(b"SNMPv3") }
-    pub fn create_ssh<'a>() -> SSHParser<'a> { SSHParser::new(b"SSH") }
-    pub fn create_tls<'a>() -> TlsParser<'a> { TlsParser::new(b"TLS") }
+lazy_static! {
+    static ref BUILDER_MAP: HashMap<&'static str, Box<RBuilder>> = {
+        let mut m = HashMap::new();
+        m.insert("ikev2", Box::new(IPsecBuilder{}) as Box<_>);
+        m.insert("kerberos_probe_tcp", Box::new(KerberosTCPBuilder{}) as Box<_>);
+        m.insert("kerberos_probe_udp", Box::new(KerberosUDPBuilder{}) as Box<_>);
+        m.insert("ntp", Box::new(NTPBuilder{}) as Box<_>);
+        m.insert("openvpn_tcp", Box::new(OpenVPNTCPBuilder{}) as Box<_>);
+        m.insert("openvpn_udp", Box::new(OpenVPNUDPBuilder{}) as Box<_>);
+        m.insert("radius", Box::new(RadiusBuilder{}) as Box<_>);
+        m.insert("snmpv1", Box::new(SNMPv1Builder{}) as Box<_>);
+        m.insert("snmpv2c", Box::new(SNMPv2cBuilder{}) as Box<_>);
+        m.insert("snmpv3", Box::new(SNMPv3Builder{}) as Box<_>);
+        m.insert("ssh", Box::new(SSHBuilder{}) as Box<_>);
+        m.insert("tls", Box::new(TLSBuilder{}) as Box<_>);
+        m
+    };
+}
 
+impl ParserRegistry {
     pub fn create<'a>(&self, s: &str) -> Result<Box<RParser>,&'static str> {
-        match s {
-            "kerberos_tcp" => Ok(Box::new(Self::create_kerberos_tcp())),
-            "kerberos_udp" => Ok(Box::new(Self::create_kerberos_udp())),
-            "ikev2"        => Ok(Box::new(Self::create_ikev2())),
-            "ipsec"        => Ok(Box::new(Self::create_ikev2())),
-            "ntp"          => Ok(Box::new(Self::create_ntp())),
-            "openvpn_tcp"  => Ok(Box::new(Self::create_openvpn_tcp())),
-            "openvpn_udp"  => Ok(Box::new(Self::create_openvpn_udp())),
-            "radius"       => Ok(Box::new(Self::create_radius())),
-            "snmp"         => Ok(Box::new(Self::create_snmpv1())),
-            "snmpv1"       => Ok(Box::new(Self::create_snmpv1())),
-            "snmpv3"       => Ok(Box::new(Self::create_snmpv3())),
-            "ssh"          => Ok(Box::new(Self::create_ssh())),
-            "tls"          => Ok(Box::new(Self::create_tls())),
-            _              => Err("unknown parser type")
+        if let Some(builder) = BUILDER_MAP.get(s) {
+            return Ok(builder.new())
         }
+        Err("unknown parser type")
     }
 
     /// Probe data and return protocol if found
     // XXX return a list of protocols if severals are matching ???
-    pub fn probe(i:&[u8], l3_hint:Option<u16>) -> Option<&'static str> {
+    pub fn probe(i:&[u8], l3_hint:Option<u16>, l4_hint:Option<&str>) -> Option<String> {
+        if let Some(parser_name) = l4_hint {
+            debug!("probe: testing protocol {}", parser_name);
+            if let Some(builder) = BUILDER_MAP.get(parser_name) {
+                if builder.probe(i) { return Some(parser_name.to_string()); }
+            }
+            debug!("probe: protocol {} not recognized, using regular tests", parser_name);
+        }
         if l3_hint == None || l3_hint == Some(6) {
-            if tls_probe(i) { return Some("tls"); }
-            if ssh_probe(i) { return Some("ssh"); }
-            if kerberos_probe_tcp(i) { return Some("kerberos_tcp"); }
-            if openvpn_tcp_probe(i) { return Some("openvpn_tcp"); }
+            if tls_probe(i) { return Some("tls".to_string()); }
+            if ssh_probe(i) { return Some("ssh".to_string()); }
+            if kerberos_probe_tcp(i) { return Some("kerberos_tcp".to_string()); }
+            if openvpn_tcp_probe(i) { return Some("openvpn_tcp".to_string()); }
         }
         if l3_hint == None || l3_hint == Some(17) {
-            if ipsec_probe(i) { return Some("ikev2"); }
-            if kerberos_probe_udp(i) { return Some("kerberos_udp"); }
-            if ntp_probe(i) { return Some("ntp"); }
-            if openvpn_udp_probe(i) { return Some("openvpn_udp"); }
-            if snmp_probe(i) { return Some("snmp"); }
-            if snmpv3_probe(i) { return Some("snmpv3"); }
+            if ipsec_probe(i) { return Some("ikev2".to_string()); }
+            if kerberos_probe_udp(i) { return Some("kerberos_udp".to_string()); }
+            if ntp_probe(i) { return Some("ntp".to_string()); }
+            if openvpn_udp_probe(i) { return Some("openvpn_udp".to_string()); }
+            if snmpv1_probe(i) { return Some("snmpv1".to_string()); }
+            if snmpv2c_probe(i) { return Some("snmpv2c".to_string()); }
+            if snmpv3_probe(i) { return Some("snmpv3".to_string()); }
         }
         None
     }

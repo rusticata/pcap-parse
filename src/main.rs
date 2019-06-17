@@ -13,6 +13,9 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 
+#[macro_use]
+extern crate lazy_static;
+
 extern crate clap;
 use clap::{Arg,App,crate_version};
 
@@ -67,7 +70,7 @@ fn parse_data_as(parser: &mut RParser, i: &[u8], direction: u8)
     parser.parse(i, direction);
 }
 
-fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: Option<&str>, globalstate: &mut GlobalState) {
+fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, l4_hint: Option<&str>, globalstate: &mut GlobalState) {
     debug!("    TCP {:?}:{} -> {:?}:{}",
            src, tcp.get_source(),
            dst, tcp.get_destination());
@@ -109,10 +112,10 @@ fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: Option<&str>, gl
         } else {
             debug!("Creating new session");
             // probe TCP data
-            match ParserRegistry::probe(payload, Some(6)) {
+            match ParserRegistry::probe(payload, Some(6), l4_hint) {
                 Some(s) => {
                     debug!("Protocol recognized as {}", s);
-                    match globalstate.registry.create(s) {
+                    match globalstate.registry.create(&s) {
                         Ok(p)  => {
                             globalstate.sessions.insert(five_t.clone(), p);
                         }
@@ -132,7 +135,7 @@ fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, _ptype: Option<&str>, gl
     parse_data_as(p, payload, direction);
 }
 
-fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: Option<&str>, globalstate: &mut GlobalState) {
+fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, l4_hint: Option<&str>, globalstate: &mut GlobalState) {
     debug!("    UDP {:?}:{} -> {:?}:{}",
            src, udp.get_source(),
            dst, udp.get_destination());
@@ -171,10 +174,10 @@ fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, _ptype: Option<&str>, gl
         } else {
             debug!("Creating new session");
             // probe UDP data
-            match ParserRegistry::probe(payload, Some(17)) {
+            match ParserRegistry::probe(payload, Some(17), l4_hint) {
                 Some(s) => {
                     debug!("Protocol recognized as {}", s);
-                    match globalstate.registry.create(s) {
+                    match globalstate.registry.create(&s) {
                         Ok(p)  => {
                             globalstate.sessions.insert(five_t.clone(), p);
                         }

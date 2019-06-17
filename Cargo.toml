@@ -13,7 +13,8 @@ pnet = "0.22.0"
 nom = "4.0"
 log = "0.4.6"
 env_logger = "0.6"
-pcap-parser = "0.2"
+pcap-parser = "0.3"
+lazy_static = "1.2"
 
 [dependencies.clap]
 version = "2"
@@ -29,6 +30,7 @@ git = "https://github.com/rusticata/rusticata.git"
 # # ipsec-parser = {path="../ipsec-parser"}
 # # kerberos-parser = {path="../kerberos-parser"}
 # # ntp-parser = {path="../ntp-parser"}
+# openvpn-parser = {path="../openvpn-parser"}
 # tls-parser = {path="../tls-parser"}
 # # x509-parser = {path="../x509-parser"}
 # snmp-parser = {path="../snmp-parser"}
