@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use std::error::Error;
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::Read;
 use std::path::Path;
 
 #[macro_use]
@@ -31,9 +31,12 @@ use pnet::packet::udp::UdpPacket;
 
 use pnet::packet::ip::IpNextHeaderProtocols;
 
-use pcap_parser::Capture;
+use pcap_parser::{Block, PcapBlockOwned};
+use pcap_parser::data::PacketData;
+use pcap_parser::traits::PcapReaderIterator;
 
 extern crate nom;
+use nom::ErrorKind;
 use nom::HexDisplay;
 
 extern crate rusticata;
@@ -250,81 +253,90 @@ fn parse(data:&[u8], ptype: Option<&str>, globalstate: &mut GlobalState) {
     }
 }
 
-fn get_data_raw<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
-    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
-    let maxlen = packet.header.caplen as usize;
-    &packet.data[..maxlen]
-}
-
-/// See http://www.tcpdump.org/linktypes/LINKTYPE_LINUX_SLL.html
-fn get_data_linux_cooked<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
-    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
-    let maxlen = packet.header.caplen as usize;
-    &packet.data[16..maxlen]
-}
-
-fn get_data_raw_ipv4<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
-    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
-    let maxlen = packet.header.caplen as usize;
-    &packet.data[..maxlen]
-}
-
-// BSD loopback encapsulation; the link layer header is a 4-byte field, in host byte order,
-// containing a value of 2 for IPv4 packets, a value of either 24, 28, or 30 for IPv6 packets, a
-// value of 7 for OSI packets, or a value of 23 for IPX packets. All of the IPv6 values correspond
-// to IPv6 packets; code reading files should check for all of them.
-// Note that ``host byte order'' is the byte order of the machine on which the packets are
-// captured; if a live capture is being done, ``host byte order'' is the byte order of the machine
-// capturing the packets, but if a ``savefile'' is being read, the byte order is not necessarily
-// that of the machine reading the capture file.
-fn get_data_null<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
-    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
-    let maxlen = packet.header.caplen as usize;
-    &packet.data[4..maxlen]
-}
-
-fn get_data_ethernet<'a>(packet: &'a pcap_parser::Packet) -> &'a[u8] {
-    // debug!("data.len: {}, caplen: {}", packet.data.len(), packet.header.caplen);
-    let maxlen = packet.header.caplen as usize;
-    &packet.data[14..maxlen]
-}
-
-fn iter_capture(cap: &mut Capture, ptype: Option<&str>, mut globalstate: &mut GlobalState) {
-    let get_data = match cap.get_datalink() {
-        pcap_parser::Linktype(0)   => get_data_null,
-        pcap_parser::Linktype(1)   => get_data_ethernet,
-        pcap_parser::Linktype(101) => get_data_raw,
-        pcap_parser::Linktype(113) => get_data_linux_cooked,
-        pcap_parser::Linktype(228) => get_data_raw_ipv4,
-        pcap_parser::Linktype(239) => pcap_parser::get_data_nflog,
-        pcap_parser::Linktype(x)   => panic!("Unsupported link type {}", x),
-    };
-    //
-    for packet in cap.iter_packets() {
-        let data = get_data(&packet);
-        parse(data, ptype, &mut globalstate);
+fn iter_capture<R: Read>(reader: &mut PcapReaderIterator<R>, ptype: Option<&str>, mut globalstate: &mut GlobalState) {
+    let mut if_linktypes = Vec::new();
+    loop {
+        match reader.next() {
+            Ok((offset, block)) => {
+                let packetdata = match block {
+                    PcapBlockOwned::NG(Block::SectionHeader(ref _shb)) => {
+                        if_linktypes = Vec::new();
+                        warn!("consuming {} bytes", offset);
+                        reader.consume(offset);
+                        continue;
+                    },
+                    PcapBlockOwned::NG(Block::InterfaceDescription(ref idb)) => {
+                        if_linktypes.push(idb.linktype);
+                        warn!("consuming {} bytes", offset);
+                        reader.consume(offset);
+                        continue;
+                    },
+                    PcapBlockOwned::NG(Block::EnhancedPacket(ref epb)) => {
+                        assert!((epb.if_id as usize) < if_linktypes.len());
+                        let linktype = if_linktypes[epb.if_id as usize];
+                        pcap_parser::data::get_packetdata(epb.data, linktype, epb.caplen as usize)
+                            .expect("Parsing PacketData failed")
+                    },
+                    PcapBlockOwned::NG(Block::SimplePacket(ref spb)) => {
+                        assert!(if_linktypes.len() > 0);
+                        let linktype = if_linktypes[0];
+                        let blen = (spb.block_len1 - 16) as usize;
+                        pcap_parser::data::get_packetdata(spb.data, linktype, blen)
+                            .expect("Parsing PacketData failed")
+                    },
+                    PcapBlockOwned::LegacyHeader(ref hdr) => {
+                        if_linktypes.push(hdr.network);
+                        debug!("Legacy pcap,  link type: {}", hdr.network);
+                        warn!("consuming {} bytes", offset);
+                        reader.consume(offset);
+                        continue;
+                    },
+                    PcapBlockOwned::Legacy(ref b) => {
+                        assert!(if_linktypes.len() > 0);
+                        let linktype = if_linktypes[0];
+                        let blen = b.caplen() as usize;
+                        pcap_parser::data::get_packetdata(b.data(), linktype, blen)
+                            .expect("Parsing PacketData failed")
+                    },
+                    PcapBlockOwned::NG(Block::NameResolution(_)) => {
+                        reader.consume(offset);
+                        continue;
+                    },
+                    _ => {
+                        debug!("unsupported block");
+                        return;
+                    }
+                };
+                let data = match packetdata {
+                    PacketData::L2(data) => {
+                        assert!(data.len() >= 14);
+                        &data[14..]
+                    },
+                    PacketData::L3(_, data) => data,
+                    _ => panic!("unsupported packet data type"),
+                };
+                parse(data, ptype, &mut globalstate);
+                reader.consume(offset);
+            }
+            Err(ErrorKind::Eof) => break,
+            Err(ErrorKind::Complete) => {
+                warn!("Could not read complete data block.");
+                warn!("Hint: the reader buffer size may be too small, or the input file nay be truncated.");
+                break
+            },
+            Err(e) => panic!("error while reading: {:?}", e),
+        }
     }
 }
 
-fn try_open_capture<'a>(buffer: &'a[u8]) -> Result<Box<Capture + 'a>,&'static str> {
-    // try pcap first
-    match pcap_parser::PcapCapture::from_file(&buffer) {
-        Ok(cap) => {
-            debug!("PCAP found");
-            return Ok(Box::new(cap));
-        },
-        _e => (), // debug!("probing for PCAP failed: {:?}", e),
+fn try_open_capture<'r, R: Read + 'r>(inner: R) -> Result<Box<PcapReaderIterator<R> + 'r>,&'static str> {
+    match pcap_parser::create_reader(65536, inner) {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            warn!("Error while creating reader: {:?}", e);
+            Err("Format not recognized")
+        }
     }
-
-    // try pcapng
-    match pcap_parser::PcapNGCapture::from_file(&buffer) {
-        Ok(cap) => {
-            return Ok(Box::new(cap));
-        },
-        _e  => (),
-    }
-
-    Err("Format not recognized")
 }
 
 fn main() {
@@ -357,7 +369,7 @@ fn main() {
 
     let path = Path::new(&filename);
     let display = path.display();
-    let mut file = match File::open(path) {
+    let file = match File::open(path) {
         // The `description` method of `io::Error` returns a string that
         // describes the error
         Err(why) => panic!("couldn't open {}: {}", display,
@@ -365,14 +377,7 @@ fn main() {
         Ok(file) => file,
     };
 
-    let mut buffer = Vec::new();
-    match file.read_to_end(&mut buffer) {
-        Err(why) => panic!("couldn't open {}: {}", display,
-                           why.description()),
-        Ok(_) => (),
-    };
-
-    match try_open_capture(&buffer) {
+    match try_open_capture(file) {
         Ok(mut cap) => {
             iter_capture(cap.as_mut(), parser, &mut globalstate);
         },
