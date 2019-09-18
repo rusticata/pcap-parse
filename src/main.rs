@@ -31,7 +31,7 @@ use pnet::packet::udp::UdpPacket;
 
 use pnet::packet::ip::IpNextHeaderProtocols;
 
-use pcap_parser::{Block, PcapBlockOwned};
+use pcap_parser::{Block, PcapBlockOwned, PcapError};
 use pcap_parser::data::PacketData;
 use pcap_parser::traits::PcapReaderIterator;
 
@@ -294,8 +294,8 @@ fn iter_capture<R: Read>(reader: &mut PcapReaderIterator<R>, ptype: Option<&str>
                     PcapBlockOwned::Legacy(ref b) => {
                         assert!(if_linktypes.len() > 0);
                         let linktype = if_linktypes[0];
-                        let blen = b.caplen() as usize;
-                        pcap_parser::data::get_packetdata(b.data(), linktype, blen)
+                        let blen = b.caplen as usize;
+                        pcap_parser::data::get_packetdata(b.data, linktype, blen)
                             .expect("Parsing PacketData failed")
                     },
                     PcapBlockOwned::NG(Block::NameResolution(_)) => {
@@ -318,8 +318,8 @@ fn iter_capture<R: Read>(reader: &mut PcapReaderIterator<R>, ptype: Option<&str>
                 parse(data, ptype, &mut globalstate);
                 reader.consume(offset);
             }
-            Err(ErrorKind::Eof) => break,
-            Err(ErrorKind::Complete) => {
+            Err(PcapError::Eof) => break,
+            Err(PcapError::Incomplete) => {
                 warn!("Could not read complete data block.");
                 warn!("Hint: the reader buffer size may be too small, or the input file nay be truncated.");
                 break

@@ -13,7 +13,7 @@ pnet = "0.22.0"
 nom = "4.0"
 log = "0.4.6"
 env_logger = "0.6"
-pcap-parser = { version="0.6", features=["data"] }
+pcap-parser = { version="0.8", features=["data"] }
 lazy_static = "1.2"
 
 [dependencies.clap]
