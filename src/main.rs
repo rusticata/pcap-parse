@@ -294,8 +294,8 @@ fn iter_capture<R: Read>(reader: &mut PcapReaderIterator<R>, ptype: Option<&str>
                     PcapBlockOwned::Legacy(ref b) => {
                         assert!(if_linktypes.len() > 0);
                         let linktype = if_linktypes[0];
-                        let blen = b.caplen() as usize;
-                        pcap_parser::data::get_packetdata(b.data(), linktype, blen)
+                        let blen = b.caplen as usize;
+                        pcap_parser::data::get_packetdata(b.data, linktype, blen)
                             .expect("Parsing PacketData failed")
                     },
                     PcapBlockOwned::NG(Block::NameResolution(_)) => {
