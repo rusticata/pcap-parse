@@ -36,7 +36,6 @@ use pcap_parser::data::PacketData;
 use pcap_parser::traits::PcapReaderIterator;
 
 extern crate nom;
-use nom::ErrorKind;
 use nom::HexDisplay;
 
 extern crate rusticata;

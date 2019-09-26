@@ -10,9 +10,9 @@ authors = ["Pierre Chifflier <chifflier@wzdftpd.net>"]
 
 [dependencies]
 pnet = "0.22.0"
-nom = "4.0"
+nom = "5.0"
 log = "0.4.6"
-env_logger = "0.6"
+env_logger = "0.7"
 pcap-parser = { version="0.8", features=["data"] }
 lazy_static = "1.2"
 
