@@ -40,6 +40,7 @@ use nom::HexDisplay;
 
 extern crate rusticata;
 use rusticata::{RParser,STREAM_TOCLIENT,STREAM_TOSERVER};
+use rusticata::probe::*;
 
 mod registry;
 use registry::ParserRegistry;
@@ -114,7 +115,12 @@ fn parse_tcp(src: IpAddr, dst: IpAddr, tcp: &TcpPacket, l4_hint: Option<&str>, g
         } else {
             debug!("Creating new session");
             // probe TCP data
-            match ParserRegistry::probe(payload, Some(6), l4_hint) {
+            let l4_info = L4Info {
+                src_port: five_t.src_port,
+                dst_port: five_t.dst_port,
+                l4_proto: 6, // TCP
+            };
+            match ParserRegistry::probe(payload, Some(6), l4_hint, &l4_info) {
                 Some(s) => {
                     debug!("Protocol recognized as {}", s);
                     match globalstate.registry.create(&s) {
@@ -176,7 +182,12 @@ fn parse_udp(src: IpAddr, dst: IpAddr, udp: &UdpPacket, l4_hint: Option<&str>, g
         } else {
             debug!("Creating new session");
             // probe UDP data
-            match ParserRegistry::probe(payload, Some(17), l4_hint) {
+            let l4_info = L4Info {
+                src_port: five_t.src_port,
+                dst_port: five_t.dst_port,
+                l4_proto: 17, // UDP
+            };
+            match ParserRegistry::probe(payload, Some(17), l4_hint, &l4_info) {
                 Some(s) => {
                     debug!("Protocol recognized as {}", s);
                     match globalstate.registry.create(&s) {
